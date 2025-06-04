@@ -1,6 +1,6 @@
 on:
-  - pull_request
-  - push
+  pull_request:
+  push:
 
 name: build
 
@@ -16,20 +16,14 @@ jobs:
 
     strategy:
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
+        os: [ubuntu-latest, windows-latest]
+        php: ["7.4", "8.0", "8.1"]
 
-        php:
-          - "7.4"
-          - "8.0"
-          - "8.1"
-          
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup cache environment
+      - name: Setup PHP Extension Cache Environment
         id: cache-env
         uses: shivammathur/cache-extensions@v1
         with:
@@ -37,44 +31,43 @@ jobs:
           extensions: ${{ env.extensions }}
           key: ${{ env.key }}
 
-      - name: Cache extensions
+      - name: Cache PHP Extensions
         uses: actions/cache@v3
         with:
           path: ${{ steps.cache-env.outputs.dir }}
           key: ${{ steps.cache-env.outputs.key }}
           restore-keys: ${{ steps.cache-env.outputs.key }}
 
-      - name: Install PHP with extensions
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           extensions: ${{ env.extensions }}
           ini-values: date.timezone='UTC'
-          
-      - name: Determine composer cache directory on Linux
+
+      - name: Determine composer cache dir (Linux)
         if: matrix.os == 'ubuntu-latest'
-        run: |
-            echo "COMPOSER_CACHE_DIR=$(composer config cache-dir)" >> $GITHUB_ENV
+        run: echo "COMPOSER_CACHE_DIR=$(composer config cache-dir)" >> $GITHUB_ENV
 
-      - name: Determine composer cache directory on Windows
+      - name: Determine composer cache dir (Windows)
         if: matrix.os == 'windows-latest'
-        run: |
-            echo "COMPOSER_CACHE_DIR=~\AppData\Local\Composer" >> $GITHUB_ENV
+        run: echo "COMPOSER_CACHE_DIR=$env:APPDATA\\Composer" >> $GITHUB_ENV
+        shell: pwsh
 
-      - name: Cache dependencies installed with composer
+      - name: Cache Composer dependencies
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cache-env.outputs.dir }}
-          key: php${{ matrix.php }}-composer-${{ matrix.dependencies }}-${{ hashFiles('**/composer.json') }}
-          restore-keys: |
-            php${{ matrix.php }}-composer-${{ matrix.dependencies }}-
+          path: ${{ env.COMPOSER_CACHE_DIR }}
+          key: php-${{ matrix.php }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: php-${{ matrix.php }}-
 
-      - name: Install dependencies with composer php PHP [5.6 - 8.0]
+      - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress --optimize-autoloader --ansi
 
-      - name: Run tests with codeception
+      - name: Run Codeception tests
         run: |
           sed -i "s/'cookieValidationKey' => ''/'cookieValidationKey' => 'testkey'/" config/web.php
           php -S 127.0.0.1:8080 -t public > ./runtime/yii.log 2>&1 &
           vendor/bin/codecept run
         shell: bash
+
